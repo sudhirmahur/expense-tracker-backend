@@ -74,6 +74,7 @@ const login = async (req, res, next) => {
     let { email, password } = req.body;
 
     if (!email || !password) {
+      console.log("Error: Email and password are required.");
       return errorResponse(res, 400, "Email and password are required.");
     }
 
@@ -82,17 +83,20 @@ const login = async (req, res, next) => {
     const user = await User.findOne({ email }).select("+password");
 
     if (!user) {
+      console.log("Error: Invalid email or password.");
       return errorResponse(res, 401, "Invalid email or password.");
     }
 
     const isMatch = await user.comparePassword(password);
 
     if (!isMatch) {
+      console.log("Error: Invalid email or password.");
       return errorResponse(res, 401, "Invalid email or password.");
     }
 
     const token = generateToken(user._id);
 
+    console.log("Login successful.");
     return successResponse(res, 200, "Login successful.", {
       token,
       user: {
@@ -105,6 +109,7 @@ const login = async (req, res, next) => {
       },
     });
   } catch (error) {
+    console.log("Error: ", error);
     next(error);
   }
 };

@@ -1,6 +1,11 @@
 const Transaction = require("../models/transaction.model");
 const { successResponse, errorResponse } = require("../utils/apiResponse");
 
+// Simple logger (can replace with Winston later)
+const log = (message, data = null) => {
+  console.log(`[Transaction LOG]: ${message}`, data || "");
+};
+
 // ─────────────────────────────────────────────
 // ✅ CREATE TRANSACTION
 // ─────────────────────────────────────────────
@@ -8,9 +13,12 @@ const createTransaction = async (req, res, next) => {
   try {
     const { type, amount, category, note, date } = req.body;
 
-    // ✅ Validation
     if (!type || !amount || !category) {
       return errorResponse(res, 400, "Type, amount and category are required.");
+    }
+
+    if (!["income", "expense"].includes(type)) {
+      return errorResponse(res, 400, "Invalid transaction type.");
     }
 
     if (amount <= 0) {
@@ -18,7 +26,7 @@ const createTransaction = async (req, res, next) => {
     }
 
     const transaction = await Transaction.create({
-      user: req.user._id, // ✅ FIXED
+      user: req.user._id,
       type,
       amount,
       category,
@@ -26,17 +34,19 @@ const createTransaction = async (req, res, next) => {
       date,
     });
 
+    log("Transaction Created", transaction._id);
+
     return successResponse(res, 201, "Transaction created successfully.", {
       transaction,
     });
   } catch (error) {
+    log("Error in createTransaction", error.message);
     next(error);
   }
 };
 
-
 // ─────────────────────────────────────────────
-// ✅ GET TRANSACTIONS (FILTER + PAGINATION)
+// ✅ GET ALL TRANSACTIONS (FILTER + PAGINATION)
 // ─────────────────────────────────────────────
 const getTransactions = async (req, res, next) => {
   try {
@@ -51,7 +61,6 @@ const getTransactions = async (req, res, next) => {
       limit = 10,
     } = req.query;
 
-    // ✅ FIXED user field
     const filter = { user: req.user._id };
 
     if (type && ["income", "expense"].includes(type)) {
@@ -98,6 +107,8 @@ const getTransactions = async (req, res, next) => {
       Transaction.countDocuments(filter),
     ]);
 
+    log("Fetched Transactions", { user: req.user._id });
+
     return successResponse(res, 200, "Transactions fetched successfully.", {
       transactions,
       pagination: {
@@ -105,15 +116,38 @@ const getTransactions = async (req, res, next) => {
         page: pageNum,
         limit: limitNum,
         totalPages: Math.ceil(total / limitNum),
-        hasNextPage: pageNum < Math.ceil(total / limitNum),
-        hasPrevPage: pageNum > 1,
       },
     });
   } catch (error) {
+    log("Error in getTransactions", error.message);
     next(error);
   }
 };
 
+// ─────────────────────────────────────────────
+// ✅ GET TRANSACTION BY ID
+// ─────────────────────────────────────────────
+const getTransactionById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const transaction = await Transaction.findOne({
+      _id: id,
+      user: req.user._id,
+    });
+
+    if (!transaction) {
+      return errorResponse(res, 404, "Transaction not found.");
+    }
+
+    return successResponse(res, 200, "Transaction fetched successfully.", {
+      transaction,
+    });
+  } catch (error) {
+    log("Error in getTransactionById", error.message);
+    next(error);
+  }
+};
 
 // ─────────────────────────────────────────────
 // ✅ UPDATE TRANSACTION
@@ -124,11 +158,11 @@ const updateTransaction = async (req, res, next) => {
 
     const transaction = await Transaction.findOne({
       _id: id,
-      user: req.user._id, // ✅ FIXED
+      user: req.user._id,
     });
 
     if (!transaction) {
-      return errorResponse(res, 404, "Transaction not found or access denied.");
+      return errorResponse(res, 404, "Transaction not found.");
     }
 
     const allowedFields = ["type", "amount", "category", "note", "date"];
@@ -141,14 +175,16 @@ const updateTransaction = async (req, res, next) => {
 
     await transaction.save();
 
+    log("Transaction Updated", id);
+
     return successResponse(res, 200, "Transaction updated successfully.", {
       transaction,
     });
   } catch (error) {
+    log("Error in updateTransaction", error.message);
     next(error);
   }
 };
-
 
 // ─────────────────────────────────────────────
 // ✅ DELETE TRANSACTION
@@ -159,17 +195,44 @@ const deleteTransaction = async (req, res, next) => {
 
     const transaction = await Transaction.findOneAndDelete({
       _id: id,
-      user: req.user._id, // ✅ FIXED
+      user: req.user._id,
     });
 
     if (!transaction) {
-      return errorResponse(res, 404, "Transaction not found or access denied.");
+      return errorResponse(res, 404, "Transaction not found.");
     }
 
+    log("Transaction Deleted", id);
+
     return successResponse(res, 200, "Transaction deleted successfully.", {
-      deletedId: transaction._id,
+      deletedId: id,
     });
   } catch (error) {
+    log("Error in deleteTransaction", error.message);
+    next(error);
+  }
+};
+
+// ─────────────────────────────────────────────
+// ✅ GET SUMMARY (TOTAL INCOME / EXPENSE)
+// ─────────────────────────────────────────────
+const getTransactionSummary = async (req, res, next) => {
+  try {
+    const summary = await Transaction.aggregate([
+      { $match: { user: req.user._id } },
+      {
+        $group: {
+          _id: "$type",
+          total: { $sum: "$amount" },
+        },
+      },
+    ]);
+
+    return successResponse(res, 200, "Summary fetched successfully.", {
+      summary,
+    });
+  } catch (error) {
+    log("Error in getTransactionSummary", error.message);
     next(error);
   }
 };
@@ -177,6 +240,8 @@ const deleteTransaction = async (req, res, next) => {
 module.exports = {
   createTransaction,
   getTransactions,
+  getTransactionById,
   updateTransaction,
   deleteTransaction,
+  getTransactionSummary,
 };
