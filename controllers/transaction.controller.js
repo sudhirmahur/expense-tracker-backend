@@ -1,53 +1,232 @@
 const Transaction = require("../models/transaction.model");
 const { successResponse, errorResponse } = require("../utils/apiResponse");
+const Category = require("../models/category.model");
 
-// Simple logger (can replace with Winston later)
+// Simple logger
 const log = (message, data = null) => {
   console.log(`[Transaction LOG]: ${message}`, data || "");
 };
 
-// ─────────────────────────────────────────────
 // ✅ CREATE TRANSACTION
-// ─────────────────────────────────────────────
+
+// const createTransaction = async (req, res, next) => {
+//   try {
+//     console.log("👉 Incoming Body:", req.body);
+//     console.log("👉 User:", req.user);
+
+//     const { type, amount, category, note, date } = req.body;
+
+//     if (!type || !amount || !category) {
+//       console.log("❌ Missing Fields");
+//       return errorResponse(res, 400, "Type, amount and category are required.");
+//     }
+
+//     if (!["income", "expense"].includes(type)) {
+//       console.log("❌ Invalid Type:", type);
+//       return errorResponse(res, 400, "Invalid transaction type.");
+//     }
+
+//     if (amount <= 0) {
+//       console.log("❌ Invalid Amount:", amount);
+//       return errorResponse(res, 400, "Amount must be greater than 0.");
+//     }
+
+//     // 🔍 CATEGORY SEARCH LOG
+//     console.log("🔍 Finding Category:", category);
+
+//     const categoryDoc = await Category.findById(category);
+
+//     if (!categoryDoc) {
+//       return errorResponse(res, 404, "Category not found.");
+//     }
+
+//     if (categoryDoc.type !== type) {
+//       return errorResponse(
+//         res,
+//         400,
+//         `Category type (${categoryDoc.type}) does not match transaction type (${type})`,
+//       );
+//     }
+
+//     // 🧾 CREATE DATA LOG
+//     console.log("🧾 Creating Transaction with:", {
+//       user: req.user._id,
+//       workspace: req.user.currentWorkspace,
+//       type,
+//       amount,
+//       category: categoryDoc._id,
+//       note,
+//       date,
+//     });
+
+//     // 🚀 CREATE TRANSACTION
+//     console.log("🚀 Creating Transaction...");
+
+//     const transaction = await Transaction.create({
+//       user: req.user._id,
+//       workspace: req.user.currentWorkspace || null,
+//       type,
+//       amount,
+//       category: categoryDoc._id,
+//       note,
+//       date,
+//     });
+
+//     console.log("✅ Transaction Created:", transaction);
+
+//     return successResponse(res, 201, "Transaction created successfully.", {
+//       transaction,
+//     });
+//   } catch (error) {
+//     console.log("🔥 ERROR:", error);
+//     next(error);
+//   }
+// };
 const createTransaction = async (req, res, next) => {
   try {
+    console.log("👉 Incoming Body:", req.body);
+    console.log("👉 User:", req.user);
+
     const { type, amount, category, note, date } = req.body;
 
+    // ✅ REQUIRED FIELDS
     if (!type || !amount || !category) {
       return errorResponse(res, 400, "Type, amount and category are required.");
     }
 
+    // ✅ TYPE VALIDATION
     if (!["income", "expense"].includes(type)) {
       return errorResponse(res, 400, "Invalid transaction type.");
     }
 
+    // ✅ AMOUNT VALIDATION
     if (amount <= 0) {
       return errorResponse(res, 400, "Amount must be greater than 0.");
     }
 
+    // ✅ WORKSPACE CHECK (🔥 IMPORTANT)
+    if (!req.user.currentWorkspace) {
+      return errorResponse(res, 400, "No workspace selected.");
+    }
+
+    // 🔍 CATEGORY CHECK
+    const categoryDoc = await Category.findById(category);
+
+    if (!categoryDoc) {
+      return errorResponse(res, 404, "Category not found.");
+    }
+
+    if (categoryDoc.type !== type) {
+      return errorResponse(
+        res,
+        400,
+        `Category type (${categoryDoc.type}) does not match transaction type (${type})`
+      );
+    }
+
+    // 🚀 CREATE TRANSACTION
     const transaction = await Transaction.create({
       user: req.user._id,
+      workspace: req.user.currentWorkspace, // ✅ FIXED
       type,
       amount,
-      category,
-      note,
-      date,
+      category: categoryDoc._id,
+      note: note || "",
+      date: date || new Date(),
     });
 
-    log("Transaction Created", transaction._id);
+    console.log("✅ Transaction Created:", transaction);
 
     return successResponse(res, 201, "Transaction created successfully.", {
       transaction,
     });
   } catch (error) {
-    log("Error in createTransaction", error.message);
+    console.log("🔥 ERROR:", error);
     next(error);
   }
 };
 
 // ─────────────────────────────────────────────
-// ✅ GET ALL TRANSACTIONS (FILTER + PAGINATION)
+// ✅ GET ALL TRANSACTIONS
 // ─────────────────────────────────────────────
+// const getTransactions = async (req, res, next) => {
+//   try {
+//     const {
+//       type,
+//       category,
+//       startDate,
+//       endDate,
+//       search,
+//       sort = "latest",
+//       page = 1,
+//       limit = 10,
+//     } = req.query;
+
+//     // 🔥 CHANGE: user → workspace
+//     const filter = { workspace: req.user.currentWorkspace };
+
+//     if (type && ["income", "expense"].includes(type)) {
+//       filter.type = type;
+//     }
+
+//     if (category) {
+//       filter.category = category;
+//     }
+
+//     if (startDate || endDate) {
+//       filter.date = {};
+//       if (startDate) filter.date.$gte = new Date(startDate);
+
+//       if (endDate) {
+//         const end = new Date(endDate);
+//         end.setHours(23, 59, 59, 999);
+//         filter.date.$lte = end;
+//       }
+//     }
+
+//     if (search) {
+//       filter.$or = [{ note: { $regex: search, $options: "i" } }];
+//     }
+
+//     const sortOptions = {
+//       latest: { date: -1 },
+//       oldest: { date: 1 },
+//       highest: { amount: -1 },
+//       lowest: { amount: 1 },
+//     };
+
+//     const sortQuery = sortOptions[sort] || sortOptions.latest;
+
+//     const pageNum = Math.max(1, parseInt(page));
+//     const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
+//     const skip = (pageNum - 1) * limitNum;
+
+//     const [transactions, total] = await Promise.all([
+//       Transaction.find(filter)
+//         .populate("category", "name type") // 🔥 YE LINE ADD KAR
+//         .sort(sortQuery)
+//         .skip(skip)
+//         .limit(limitNum),
+
+//       Transaction.countDocuments(filter),
+//     ]);
+
+//     log("Fetched Transactions", { workspace: req.user.currentWorkspace });
+
+//     return successResponse(res, 200, "Transactions fetched successfully.", {
+//       transactions,
+//       pagination: {
+//         total,
+//         page: pageNum,
+//         limit: limitNum,
+//         totalPages: Math.ceil(total / limitNum),
+//       },
+//     });
+//   } catch (error) {
+//     log("Error in getTransactions", error.message);
+//     next(error);
+//   }
+// };
 const getTransactions = async (req, res, next) => {
   try {
     const {
@@ -61,7 +240,12 @@ const getTransactions = async (req, res, next) => {
       limit = 10,
     } = req.query;
 
-    const filter = { user: req.user._id };
+    // ❌ agar workspace nahi hai toh error
+    if (!req.user.currentWorkspace) {
+      return errorResponse(res, 400, "Workspace not selected");
+    }
+
+    const filter = { workspace: req.user.currentWorkspace };
 
     if (type && ["income", "expense"].includes(type)) {
       filter.type = type;
@@ -83,10 +267,7 @@ const getTransactions = async (req, res, next) => {
     }
 
     if (search) {
-      filter.$or = [
-        { note: { $regex: search, $options: "i" } },
-        { category: { $regex: search, $options: "i" } },
-      ];
+      filter.$or = [{ note: { $regex: search, $options: "i" } }];
     }
 
     const sortOptions = {
@@ -103,11 +284,16 @@ const getTransactions = async (req, res, next) => {
     const skip = (pageNum - 1) * limitNum;
 
     const [transactions, total] = await Promise.all([
-      Transaction.find(filter).sort(sortQuery).skip(skip).limit(limitNum),
+      Transaction.find(filter)
+        .populate("category", "name type")
+        .sort(sortQuery)
+        .skip(skip)
+        .limit(limitNum),
+
       Transaction.countDocuments(filter),
     ]);
 
-    log("Fetched Transactions", { user: req.user._id });
+    console.log("✅ WORKSPACE:", req.user.currentWorkspace);
 
     return successResponse(res, 200, "Transactions fetched successfully.", {
       transactions,
@@ -119,13 +305,13 @@ const getTransactions = async (req, res, next) => {
       },
     });
   } catch (error) {
-    log("Error in getTransactions", error.message);
+    console.log("🔥 ERROR:", error);
     next(error);
   }
 };
 
 // ─────────────────────────────────────────────
-// ✅ GET TRANSACTION BY ID
+// ✅ GET BY ID
 // ─────────────────────────────────────────────
 const getTransactionById = async (req, res, next) => {
   try {
@@ -133,7 +319,7 @@ const getTransactionById = async (req, res, next) => {
 
     const transaction = await Transaction.findOne({
       _id: id,
-      user: req.user._id,
+      workspace: req.user.currentWorkspace, // 🔥 CHANGE
     });
 
     if (!transaction) {
@@ -150,7 +336,7 @@ const getTransactionById = async (req, res, next) => {
 };
 
 // ─────────────────────────────────────────────
-// ✅ UPDATE TRANSACTION
+// ✅ UPDATE
 // ─────────────────────────────────────────────
 const updateTransaction = async (req, res, next) => {
   try {
@@ -158,7 +344,7 @@ const updateTransaction = async (req, res, next) => {
 
     const transaction = await Transaction.findOne({
       _id: id,
-      user: req.user._id,
+      workspace: req.user.currentWorkspace, // 🔥 CHANGE
     });
 
     if (!transaction) {
@@ -187,7 +373,7 @@ const updateTransaction = async (req, res, next) => {
 };
 
 // ─────────────────────────────────────────────
-// ✅ DELETE TRANSACTION
+// ✅ DELETE
 // ─────────────────────────────────────────────
 const deleteTransaction = async (req, res, next) => {
   try {
@@ -195,7 +381,7 @@ const deleteTransaction = async (req, res, next) => {
 
     const transaction = await Transaction.findOneAndDelete({
       _id: id,
-      user: req.user._id,
+      workspace: req.user.currentWorkspace, // 🔥 CHANGE
     });
 
     if (!transaction) {
@@ -214,12 +400,12 @@ const deleteTransaction = async (req, res, next) => {
 };
 
 // ─────────────────────────────────────────────
-// ✅ GET SUMMARY (TOTAL INCOME / EXPENSE)
+// ✅ SUMMARY
 // ─────────────────────────────────────────────
 const getTransactionSummary = async (req, res, next) => {
   try {
     const summary = await Transaction.aggregate([
-      { $match: { user: req.user._id } },
+      { $match: { workspace: req.user.currentWorkspace } }, // 🔥 CHANGE
       {
         $group: {
           _id: "$type",

@@ -38,12 +38,19 @@ const userSchema = new mongoose.Schema(
       type: String, // store referralCode
       default: null,
     },
+    currentWorkspace: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Workspace",
+    },
+    workspacesCount: {
+      type: Number,
+      default: 1,
+    },
   },
   {
     timestamps: true,
-  }
+  },
 );
-
 
 // 🔥 PRE-SAVE HOOK
 userSchema.pre("save", async function () {
@@ -73,14 +80,12 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-
 // 🔒 SAFE OBJECT (remove sensitive data)
 userSchema.methods.toSafeObject = function () {
   const obj = this.toObject();
   delete obj.password;
   return obj;
 };
-
 
 // 🚀 EXPORT
 const User = mongoose.model("User", userSchema);

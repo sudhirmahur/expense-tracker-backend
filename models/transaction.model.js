@@ -7,6 +7,11 @@ const transactionSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    workspace: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Workspace",
+      required: false, // ❌ workspace optional
+    },
 
     type: {
       type: String,
@@ -37,7 +42,7 @@ const transactionSchema = new mongoose.Schema(
       default: Date.now,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // 🔥 Dynamic validation
