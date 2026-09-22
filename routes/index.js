@@ -6,11 +6,17 @@ const authRoutes = require("./auth.routes");
 const transactionRoutes = require("./transaction.routes");
 const referralRoutes = require("./referral.routes");
 const statsRoutes = require("./stats.routes");
+const categoryRoutes = require("./category.routes");
+const workspaceRoutes = require("./workspace.routes");
+
+
 
 // Mount routes
 router.use("/auth", authRoutes);
 router.use("/transactions", transactionRoutes);
 router.use("/referral", referralRoutes);
 router.use("/stats", statsRoutes);
+router.use("/categories", categoryRoutes);
+router.use("/workspace", workspaceRoutes);
 
 module.exports = router;

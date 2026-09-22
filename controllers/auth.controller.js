@@ -1,9 +1,13 @@
 const User = require("../models/user.model");
+const Workspace = require("../models/workspace.model");
+const WorkspaceMember = require("../models/workspaceMember.model");
+
 const generateToken = require("../utils/generateToken");
 const { successResponse, errorResponse } = require("../utils/apiResponse");
 
+
 // ─────────────────────────────────────────────
-// ✅ REGISTER
+// ✅ REGISTER (UPDATED WITH WORKSPACE LOGIC 🔥)
 // ─────────────────────────────────────────────
 const register = async (req, res, next) => {
   try {
@@ -14,7 +18,6 @@ const register = async (req, res, next) => {
       return errorResponse(res, 400, "All fields are required.");
     }
 
-    // ✅ Normalize email
     email = email.toLowerCase().trim();
 
     // ✅ Check existing user
@@ -23,30 +26,89 @@ const register = async (req, res, next) => {
       return errorResponse(res, 409, "Email already registered.");
     }
 
-    // ✅ Referral handling
-    let referredBy = null;
-    let referredUserId = null;
-
-    if (referralCode) {
-      const referrer = await User.findOne({ referralCode });
-
-      if (!referrer) {
-        return errorResponse(res, 400, "Invalid referral code.");
-      }
-
-      referredBy = referralCode;
-      referredUserId = referrer._id; // 🔥 useful for analytics
-    }
-
-    // ✅ Create user
+    // ✅ Create user first
     const user = await User.create({
       name: name.trim(),
       email,
       password,
-      referredBy,
-      referredUserId, // optional field (add in model if needed)
+      referredBy: referralCode || null,
     });
 
+    let workspaceId;
+
+    // ─────────────────────────────
+    // 🔥 CASE 1: NO REFERRAL (A)
+    // ─────────────────────────────
+    if (!referralCode) {
+      const workspace = await Workspace.create({
+        name: `${user.name}'s Workspace`,
+        owner: user._id,
+      });
+
+      await WorkspaceMember.create({
+        user: user._id,
+        workspace: workspace._id,
+        role: "owner",
+      });
+
+      workspaceId = workspace._id;
+    }
+
+    // ─────────────────────────────
+    // 🔥 CASE 2: WITH REFERRAL
+    // ─────────────────────────────
+    if (referralCode) {
+      const refUser = await User.findOne({ referralCode });
+
+      if (!refUser) {
+        return errorResponse(res, 400, "Invalid referral code.");
+      }
+
+      // check: kya refUser already kisi workspace ka owner hai
+      const ownerWorkspace = await WorkspaceMember.findOne({
+        user: refUser._id,
+        role: "owner",
+      });
+
+      if (ownerWorkspace) {
+        // ✅ join same workspace (A ka group)
+        await WorkspaceMember.create({
+          user: user._id,
+          workspace: ownerWorkspace.workspace,
+          role: "member",
+        });
+
+        workspaceId = ownerWorkspace.workspace;
+      } else {
+        // 🔥 NEW WORKSPACE (B apna group banayega)
+        const newWorkspace = await Workspace.create({
+          name: `${refUser.name}'s Team`,
+          owner: refUser._id,
+        });
+
+        // B ko owner banao
+        await WorkspaceMember.create({
+          user: refUser._id,
+          workspace: newWorkspace._id,
+          role: "owner",
+        });
+
+        // new user add
+        await WorkspaceMember.create({
+          user: user._id,
+          workspace: newWorkspace._id,
+          role: "member",
+        });
+
+        workspaceId = newWorkspace._id;
+      }
+    }
+
+    // ✅ Set current workspace
+    user.currentWorkspace = workspaceId;
+    await user.save();
+
+    // ✅ Token
     const token = generateToken(user._id);
 
     return successResponse(res, 201, "Registration successful.", {
@@ -57,6 +119,7 @@ const register = async (req, res, next) => {
         email: user.email,
         referralCode: user.referralCode,
         referredBy: user.referredBy,
+        currentWorkspace: user.currentWorkspace,
         createdAt: user.createdAt,
       },
     });
@@ -67,7 +130,7 @@ const register = async (req, res, next) => {
 
 
 // ─────────────────────────────────────────────
-// ✅ LOGIN
+// ✅ LOGIN (UPDATED)
 // ─────────────────────────────────────────────
 const login = async (req, res, next) => {
   try {
@@ -101,6 +164,7 @@ const login = async (req, res, next) => {
         email: user.email,
         referralCode: user.referralCode,
         referredBy: user.referredBy,
+        currentWorkspace: user.currentWorkspace,
         createdAt: user.createdAt,
       },
     });
